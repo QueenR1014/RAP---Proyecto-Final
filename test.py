@@ -1,7 +1,6 @@
 from utils.enviroment import ProblemaTrading
-from utils.nodes import NodoTrading
 
-from algorithms import A_star
+from algorithms import A_star, reconstruir_camino
 
 import pandas as pd
 # --------------------------------------------------
@@ -20,7 +19,8 @@ problema = ProblemaTrading(
     precios=precios, 
     efectivo_inicial=10000,
     cantidades_iniciales=None,
-    ventana= 7
+    ventana= 7,
+    porcentaje= 0.008
 )
 
 
@@ -42,3 +42,5 @@ if resultado is not None:
         "Valor final:",
         problema.valor_portafolio(nodo_final.estado)
     )
+
+print(resultado)

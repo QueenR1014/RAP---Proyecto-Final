@@ -30,9 +30,11 @@ def A_star(problema, heuristica, W=1):
     # --------------------------------------------------
 
     while not frontera.is_empty():
-
-        nodo, prioridad = frontera.pop()
-
+        nodo, prioridad = frontera.pop(with_value=True)
+        print(
+            f"Día explorado: {nodo.estado[0]} | "
+            f"Frontera: {len(frontera.pila)}"
+        )
         s = nodo.estado
         cod = problema.codigo(s)
 

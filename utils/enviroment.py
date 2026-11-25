@@ -211,7 +211,9 @@ class ProblemaTrading:
         k = self.ventana
 
         if t < 2 * k:
-            return 0.0
+            k = min(k, (t+1)//2)
+            if k < 2:
+                return 0.0
 
         dias_restantes = self.n_dias - 1 - t
 
@@ -274,7 +276,7 @@ class ProblemaTrading:
         Genera los nodos sucesores de un estado.
         """
 
-        from nodes import NodoTrading
+        from utils.nodes import NodoTrading
 
         hijos = []
 
@@ -292,8 +294,7 @@ class ProblemaTrading:
 
         # Ordenar por valor heurístico descendente.
         evaluados.sort(
-            key=lambda x: x[2],
-            reverse=True
+            key=lambda x: x[2]
         )
 
         # Conservar el porcentaje más prometedor.
@@ -301,6 +302,12 @@ class ProblemaTrading:
             1,
             ceil(len(evaluados) * self.porcentaje)
         )
+        if estado[0] >= 23:
+            print(
+                f"Día {estado[0]} | "
+                f"Acciones: {len(acciones)} | "
+                f"Hijos: {n_conservar}"
+            )
 
         for accion, nuevo_estado, valor in evaluados[:n_conservar]:
 
@@ -319,7 +326,7 @@ class ProblemaTrading:
         Construye el nodo correspondiente al estado inicial.
         """
 
-        from nodes import NodoTrading
+        from utils.nodes import NodoTrading
 
         return NodoTrading(
             self.estado_inicial,
