@@ -1,56 +1,92 @@
-from utils.enviroment import ProblemaTrading
-from utils.nodes import NodoTrading
+from types import MethodType
+from math import inf
+from utils.queue import ListaPrioritaria
 
-import pandas as pd
+def A_star(problema, heuristica, W=1):
 
-# --------------------------------------------------
-# Lectura de Precios
-# --------------------------------------------------
-precios = pd.read_csv("./data/stock_prices.csv").iloc[:252,1:]
+    # Asignar la heurística al ambiente.
+    #problema.heuristica = MethodType(heuristica, problema)
 
-#print(precios.shape)
-#precios.info()
+    # --------------------------------------------------
+    # Inicialización
+    # --------------------------------------------------
 
-# --------------------------------------------------
-# Creación del Ambiente
-# --------------------------------------------------
+    nodo = problema.nodo_inicial()
 
-problema = ProblemaTrading(
-    precios=precios, 
-    efectivo_inicial=10000,
-    cantidades_iniciales=None,
-    ventana= 7
-)
-
-# --------------------------------------------------
-# Búsqueda A*
-# --------------------------------------------------
-
-# Ejercicio 7a
-def A_star(problema, heuristica, W):
-
-    problema.heuristica = MethodType(heuristica, problema)
-
-    # AQUÍ SU CÓDIGO
-    s = problema.estado_inicial
-    v = problema.heuristica(s)
+    s = nodo.estado
     cod = problema.codigo(s)
-    nodo = Nodo(s,None,None,0,cod)
+
     frontera = ListaPrioritaria()
-    frontera.push(nodo, v)
-    explorados = {cod:v}
+    frontera.push(nodo, W * problema.heuristica(s))
+
+    # Mejor costo acumulado conocido para cada estado.
+    explorados = {cod: 0}
+
+    # Información para reconstruir el camino.
+    padres = {}
+
+    # --------------------------------------------------
+    # Búsqueda
+    # --------------------------------------------------
+
     while not frontera.is_empty():
-        nodo = frontera.pop()
-        if problema.test_objetivo(nodo.estado): return nodo
-        for accion in problema.acciones_aplicables(nodo.estado):
-            hijo = nodo_hijo(problema, nodo, accion)
-            s = hijo.estado
-            v = problema.heuristica(s)
-            cod = hijo.codigo
-            c = hijo.costo_camino
-            h = W * v + c
-            if cod not in explorados.keys() or h < explorados[cod]:
-                frontera.push(hijo, h)
-                explorados[cod] = h
+
+        nodo, prioridad = frontera.pop()
+
+        s = nodo.estado
+        cod = problema.codigo(s)
+
+        g = explorados[cod]
+        h = problema.heuristica(s)
+
+        # Ignorar entradas desactualizadas de la frontera.
+        if prioridad > g + W * h + 1e-9:
+            continue
+
+        # Verificar objetivo.
+        if problema.test_objetivo(s):
+            acciones = reconstruir_camino(cod, padres)
+            return nodo, acciones
+
+        # Generar sucesores.
+        for accion, hijo in nodo.generar_hijos():
+
+            estado_hijo = hijo.estado
+            cod_hijo = problema.codigo(estado_hijo)
+
+            # Costo acumulado.
+            nuevo_costo = (
+                g + problema.costo(s, accion)
+            )
+
+            # Evaluar si encontramos un camino mejor.
+            if nuevo_costo < explorados.get(cod_hijo, inf):
+
+                explorados[cod_hijo] = nuevo_costo
+
+                padres[cod_hijo] = (cod, accion)
+
+                # Evaluación f(n) = g(n) + W*h(n).
+                f = (
+                    nuevo_costo
+                    + W * problema.heuristica(estado_hijo)
+                )
+
+                frontera.push(hijo, f)
+
     return None
-    # HASTA AQUÍ SU CÓDIGO
+
+
+def reconstruir_camino(codigo, padres):
+
+    acciones = []
+
+    while codigo in padres:
+
+        codigo_padre, accion = padres[codigo]
+
+        acciones.append(accion)
+
+        codigo = codigo_padre
+
+    return acciones[::-1]

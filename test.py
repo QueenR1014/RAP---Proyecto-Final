@@ -1,0 +1,44 @@
+from utils.enviroment import ProblemaTrading
+from utils.nodes import NodoTrading
+
+from algorithms import A_star
+
+import pandas as pd
+# --------------------------------------------------
+# Lectura de Precios
+# --------------------------------------------------
+precios = pd.read_csv("./data/stock_prices.csv").iloc[:252,1:]
+
+#print(precios.shape)
+#precios.info()
+
+# --------------------------------------------------
+# Creación del Ambiente
+# --------------------------------------------------
+
+problema = ProblemaTrading(
+    precios=precios, 
+    efectivo_inicial=10000,
+    cantidades_iniciales=None,
+    ventana= 7
+)
+
+
+heuristica_trading = problema.heuristica
+resultado = A_star(
+    problema,
+    heuristica_trading,
+    W=1
+)
+
+if resultado is not None:
+
+    nodo_final, acciones = resultado
+
+    print("Estado final:", nodo_final.estado)
+    print("Acciones:", acciones)
+
+    print(
+        "Valor final:",
+        problema.valor_portafolio(nodo_final.estado)
+    )
