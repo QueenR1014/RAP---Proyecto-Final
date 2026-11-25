@@ -19,8 +19,8 @@ problema = ProblemaTrading(
     precios=precios, 
     efectivo_inicial=10000,
     cantidades_iniciales=None,
-    ventana= 7,
-    porcentaje= 0.008
+    ventana= 20,
+    porcentaje= 0.01
 )
 
 
@@ -43,4 +43,7 @@ if resultado is not None:
         problema.valor_portafolio(nodo_final.estado)
     )
 
-print(resultado)
+from utils.graphs import graficar_trayectoria, graficar_acciones
+
+graficar_acciones(precios=precios.to_numpy(), nombres_activos=precios.columns.to_list())
+graficar_trayectoria(problema=problema, acciones=resultado[1])

@@ -10,7 +10,9 @@ class ProblemaTrading:
         efectivo_inicial=10_000,
         cantidades_iniciales=None,
         ventana=20,
-        porcentaje = 0.15
+        porcentaje = 0.15,
+        lambda_conc=0.002, 
+        w_max=0.3
     ):
         """
         Ambiente para el problema de trading.
@@ -55,6 +57,8 @@ class ProblemaTrading:
 
         self.porcentaje = porcentaje
 
+        self.lambda_conc = lambda_conc   # intensidad de la penalización
+        self.w_max = w_max               # peso máximo tolerado por activo
     # --------------------------------------------------
     # Valoración del portafolio
     # --------------------------------------------------
@@ -80,7 +84,9 @@ class ProblemaTrading:
 
     def acciones_aplicables(self, estado):
         """
-        Genera todas las operaciones factibles para el día actual.
+        Genera las operaciones factibles para el día actual.
+        Las cantidades se discretizan en fracciones del máximo posible
+        para mantener acotado el factor de ramificación.
 
         Formato:
         (operacion, indice_activo, cantidad)
@@ -93,19 +99,27 @@ class ProblemaTrading:
 
         acciones = [("MANTENER", None, 0)]
 
+        fracciones = (0.25, 0.5, 0.75, 1.0)
+
         for i in range(self.n_activos):
 
             precio = self.precios[t, i]
 
-            # Compras: cualquier cantidad entera asequible.
-            max_compra = floor(efectivo / precio)
+            # Compras: fracciones del máximo asequible.
+            max_compra = floor((efectivo + 1e-9) / precio)
+            compras = {floor(max_compra * f) for f in fracciones}
 
-            for n in range(1, max_compra + 1):
-                acciones.append(("COMPRAR", i, n))
+            for n in sorted(compras):
+                if n > 0:
+                    acciones.append(("COMPRAR", i, n))
 
-            # Ventas: cualquier cantidad entera poseída.
-            for n in range(1, cantidades[i] + 1):
-                acciones.append(("VENDER", i, n))
+            # Ventas: fracciones de lo poseído.
+            max_venta = int(cantidades[i])
+            ventas = {floor(max_venta * f) for f in fracciones}
+
+            for n in sorted(ventas):
+                if n > 0:
+                    acciones.append(("VENDER", i, n))
 
         return acciones
 
@@ -175,79 +189,85 @@ class ProblemaTrading:
     # Costo de transición
     # --------------------------------------------------
 
+    def penalizacion_concentracion(self, estado):
+        """
+        Costo diario por concentración: lambda * V * sum(max(0, w_i - w_max)^2).
+        """
+        t, efectivo, cantidades = estado
+        idx = min(t, self.n_dias - 1)
+
+        posiciones = np.asarray(cantidades, dtype=float) * self.precios[idx]
+        valor = efectivo + posiciones.sum()
+
+        if valor <= 0:
+            return 0.0
+
+        pesos = posiciones / valor
+        exceso = np.maximum(0.0, pesos - self.w_max)
+
+        return self.lambda_conc * valor * np.sum(exceso ** 2)
+
     def costo(self, estado, accion):
-        """
-        Convierte la maximización del valor del portafolio
-        en una minimización del costo acumulado.
-
-        Costo = valor actual - valor del sucesor.
-        """
-
         sucesor = self.transicion(estado, accion)
 
         return (
             self.valor_portafolio(estado)
             - self.valor_portafolio(sucesor)
+            + self.penalizacion_concentracion(sucesor)
         )
-
+    
     # --------------------------------------------------
     # Heurística
     # --------------------------------------------------
 
+    def _factores_crecimiento(self, t):
+        """
+        Factores de crecimiento proyectados hasta el último día para cada
+        activo, usando solo precios hasta t (sin mirar el futuro).
+        Devuelve (factores_por_activo, factor_efectivo).
+        """
+        if not hasattr(self, "_cache_fact"):
+            self._cache_fact = {}
+
+        if t in self._cache_fact:
+            return self._cache_fact[t]
+
+        dias_restantes = self.n_dias - 1 - t
+        k = min(self.ventana, (t + 1) // 2)
+
+        if k < 1 or dias_restantes <= 0:
+            tasas = np.zeros(self.n_activos)
+        else:
+            hist = self.precios[:t + 1]
+            ma_rec = hist[-k:].mean(axis=0)
+            ma_ant = hist[-2 * k:-k].mean(axis=0)
+            tasas = (ma_rec / ma_ant) ** (1.0 / k) - 1.0
+            tasas = np.clip(tasas, -0.05, 0.05)   # evita proyecciones absurdas
+
+        factores = (1.0 + tasas) ** max(dias_restantes, 0)
+        factor_efectivo = max(1.0, factores.max())  # el efectivo puede invertirse
+
+        self._cache_fact[t] = (factores, factor_efectivo)
+        return self._cache_fact[t]
+
+
     def heuristica(self, estado):
-        """
-        Estima el costo restante hasta el final del horizonte.
-
-        Utiliza medias móviles para proyectar los precios.
-        """
-
-        t, efectivo, cantidades = estado
-
-        valor_actual = self.valor_portafolio(estado)
-
         if self.test_objetivo(estado):
             return 0.0
 
-        k = self.ventana
+        t, efectivo, cantidades = estado
+        factores, f_efectivo = self._factores_crecimiento(t)
 
-        if t < 2 * k:
-            k = min(k, (t+1)//2)
-            if k < 2:
-                return 0.0
+        valor_actual = self.valor_portafolio(estado)
+        valor_estimado = (
+            efectivo * f_efectivo
+            + np.dot(cantidades, self.precios[t] * factores)
+        )
 
         dias_restantes = self.n_dias - 1 - t
+        pen_restante = self.penalizacion_concentracion(estado) * dias_restantes
 
-        if dias_restantes <= 0:
-            return 0.0
-
-        precios_historicos = self.precios[:t + 1]
-
-        valor_estimado = efectivo
-
-        for i in range(self.n_activos):
-
-            ma_reciente = np.mean(
-                precios_historicos[-k:, i]
-            )
-
-            ma_anterior = np.mean(
-                precios_historicos[-2*k:-k, i]
-            )
-
-            rendimiento = (
-                (ma_reciente / ma_anterior) ** (1 / k) - 1
-            )
-
-            precio_estimado = (
-                precios_historicos[-1, i]
-                * (1 + rendimiento) ** dias_restantes
-            )
-
-            valor_estimado += cantidades[i] * precio_estimado
-
-        # Costo restante estimado:
-        # valor actual - valor terminal proyectado.
-        return valor_actual - valor_estimado
+        return valor_actual - valor_estimado + pen_restante
 
     # --------------------------------------------------
     # Identificación de estados
@@ -288,7 +308,7 @@ class ProblemaTrading:
 
             nuevo_estado = self.transicion(estado, accion)
 
-            valor = self.heuristica(nuevo_estado)
+            valor = self.costo(estado, accion) + self.heuristica(nuevo_estado)   # f del hijo
 
             evaluados.append((accion, nuevo_estado, valor))
 
