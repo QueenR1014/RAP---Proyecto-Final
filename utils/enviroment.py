@@ -1,5 +1,5 @@
 import numpy as np
-from math import floor
+from math import floor, ceil
 
 
 class ProblemaTrading:
@@ -9,7 +9,8 @@ class ProblemaTrading:
         precios,
         efectivo_inicial=10_000,
         cantidades_iniciales=None,
-        ventana=20
+        ventana=20,
+        porcentaje = 0.15
     ):
         """
         Ambiente para el problema de trading.
@@ -51,6 +52,8 @@ class ProblemaTrading:
             float(efectivo_inicial),
             tuple(cantidades_iniciales)
         )
+
+        self.porcentaje = porcentaje
 
     # --------------------------------------------------
     # Valoración del portafolio
@@ -259,4 +262,66 @@ class ProblemaTrading:
             t,
             round(efectivo, 8),
             tuple(cantidades)
+        )
+
+    
+    # --------------------------------------------------
+    #  Generación de estados
+    # --------------------------------------------------
+
+    def generar_hijos(self, estado):
+        """
+        Genera los nodos sucesores de un estado.
+        """
+
+        from nodes import NodoTrading
+
+        hijos = []
+
+        acciones = self.acciones_aplicables(estado)
+
+        evaluados = []
+
+        for accion in acciones:
+
+            nuevo_estado = self.transicion(estado, accion)
+
+            valor = self.heuristica(nuevo_estado)
+
+            evaluados.append((accion, nuevo_estado, valor))
+
+        # Ordenar por valor heurístico descendente.
+        evaluados.sort(
+            key=lambda x: x[2],
+            reverse=True
+        )
+
+        # Conservar el porcentaje más prometedor.
+        n_conservar = max(
+            1,
+            ceil(len(evaluados) * self.porcentaje)
+        )
+
+        for accion, nuevo_estado, valor in evaluados[:n_conservar]:
+
+            hijo = NodoTrading(
+                nuevo_estado,
+                self
+            )
+
+            hijos.append((accion, hijo))
+
+        return hijos
+
+
+    def nodo_inicial(self):
+        """
+        Construye el nodo correspondiente al estado inicial.
+        """
+
+        from nodes import NodoTrading
+
+        return NodoTrading(
+            self.estado_inicial,
+            self
         )
