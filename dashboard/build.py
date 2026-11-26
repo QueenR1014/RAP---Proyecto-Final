@@ -1,8 +1,8 @@
 """
-Arma dashboard/index.html a partir de dashboard/src.html, incrustando
-data/stock_prices.csv y los resultados de results/.
+Arma index.html (en la raíz del repo) a partir de dashboard/src.html,
+incrustando data/stock_prices.csv y los resultados de results/.
 
-    python dashboard/build.py            -> dashboard/index.html (se abre con doble clic)
+    python dashboard/build.py            -> index.html (se abre con doble clic)
     python dashboard/build.py --fragment -> sin <!doctype>/<head> (para publicar como artifact)
 """
 import json
@@ -45,7 +45,7 @@ def main():
             '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
             "</head>\n<body>\n" + html + "\n</body>\n</html>\n"
         )
-        salida = RAIZ / "dashboard" / "index.html"
+        salida = RAIZ / "index.html"
     salida.write_text(html, encoding="utf-8")
     print(f"{salida} ({len(html) // 1024} KB)")
 
