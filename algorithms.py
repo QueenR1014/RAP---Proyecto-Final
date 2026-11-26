@@ -1,3 +1,4 @@
+import json
 from math import inf
 from utils.queue import ListaPrioritaria
 
@@ -64,3 +65,20 @@ def reconstruir_camino(codigo, padres):
         codigo, accion = padres[codigo][0], padres[codigo][1]
         acciones.append(accion)
     return acciones[::-1]
+
+
+
+def guardar_acciones(acciones, archivo="acciones.json"):
+    datos = [
+        [op, None if i is None else int(i), int(n)]
+        for op, i, n in acciones
+    ]
+    with open(archivo, "w", encoding="utf-8") as f:
+        json.dump(datos, f)
+    print(f"{len(datos)} acciones guardadas en {archivo}")
+
+
+def cargar_acciones(archivo="acciones.json"):
+    with open(archivo, "r", encoding="utf-8") as f:
+        datos = json.load(f)
+    return [(op, i, n) for op, i, n in datos]
