@@ -1,6 +1,7 @@
 from utils.enviroment import ProblemaTrading
 
 from algorithms import A_star, reconstruir_camino
+from utils.nodes import ejecutar_mcts
 
 import pandas as pd
 # --------------------------------------------------
@@ -45,5 +46,12 @@ if resultado is not None:
 
 from utils.graphs import graficar_trayectoria, graficar_acciones
 
-graficar_acciones(precios=precios.to_numpy(), nombres_activos=precios.columns.to_list())
-graficar_trayectoria(problema=problema, acciones=resultado[1])
+#graficar_acciones(precios=precios.to_numpy(), nombres_activos=precios.columns.to_list())
+#graficar_trayectoria(problema=problema, acciones=resultado[1])
+
+estado_final, acciones = ejecutar_mcts(
+    problema, problema.estado_inicial,
+    iteraciones=1500, c=1.0, horizonte_rollout=30
+)
+print("Valor final:", problema.valor_portafolio(estado_final))
+graficar_trayectoria(problema, acciones, guardar="./utils/plots/mcts.png")

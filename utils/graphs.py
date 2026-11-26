@@ -52,7 +52,6 @@ def graficar_trayectoria(problema, acciones, guardar=None):
     if guardar:
         fig.savefig(guardar, dpi=150)
 
-    plt.savefig("utils/plots/trayectoria.png")
     plt.show()
     return dias, valores, efectivos
 
