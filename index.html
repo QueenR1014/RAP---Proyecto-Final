@@ -137,6 +137,19 @@ figcaption b{font-size:13px;font-weight:600}
 .leg i.dash::before{background:repeating-linear-gradient(90deg,var(--c) 0 3px,transparent 3px 5px)}
 .chart{width:100%;touch-action:pan-y;cursor:crosshair}
 .chart svg{display:block;overflow:visible}
+.perfwrap{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:24px;align-items:start}
+.perf{overflow-x:auto}
+.perf table{border-collapse:collapse;width:100%;font-size:12.5px}
+.perf th,.perf td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+.perf th:first-child,.perf td:first-child{text-align:left;padding-left:0;color:var(--muted);font-family:var(--f-ui)}
+.perf thead th{font-weight:500;font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--rule);vertical-align:bottom}
+.perf thead th i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:5px}
+.perf thead th.sel{color:var(--ink);font-weight:600}
+.perf td{font-family:var(--f-num);color:var(--muted)}
+.perf td.sel{color:var(--ink);background:var(--surface)}
+.perf td.best{font-weight:600;color:var(--ink)}
+.perf tr.grp td{padding-top:12px;border-bottom:0;font:600 10.5px var(--f-ui);text-transform:uppercase;letter-spacing:.08em;color:var(--faint);background:none}
+.perf td[title]{cursor:help;text-decoration:underline dotted var(--faint);text-underline-offset:3px}
 .duo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}
 
 .state{display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -168,7 +181,7 @@ figcaption b{font-size:13px;font-weight:600}
   .app{grid-template-columns:1fr}
   .ctl{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule);padding-right:max(16px,env(safe-area-inset-right,0px));padding-left:max(16px,env(safe-area-inset-left,0px))}
   .stage{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-  .duo,.search{grid-template-columns:minmax(0,1fr)}
+  .duo,.search,.perfwrap{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:520px){
   .big .v{font-size:26px}.svals{grid-template-columns:repeat(2,1fr)}
@@ -249,6 +262,17 @@ figcaption b{font-size:13px;font-weight:600}
     <figcaption><b>Valor del portafolio</b><span class="leg" id="leg-valor"></span></figcaption>
     <div class="chart" id="ch-valor"></div>
   </figure>
+
+  <section class="perfwrap">
+    <figure>
+      <figcaption><b>Desempeño</b><span class="leg">mejor valor de cada fila en negrita</span></figcaption>
+      <div class="perf" id="perf"></div>
+    </figure>
+    <figure>
+      <figcaption><b>Caída desde el máximo</b><span class="leg" id="leg-dd"></span></figcaption>
+      <div class="chart" id="ch-dd"></div>
+    </figure>
+  </section>
 
   <div class="duo">
     <figure>
@@ -520,6 +544,35 @@ function trayectoria(P, acts){
   R.ops = acts.filter(a=>a[0] !== 'MANTENER').length;
   return R;
 }
+// ---- métricas de desempeño sobre la serie diaria de valor
+function metricas(v, v0){
+  const n = v.length; if(!n) return null;
+  const r = []; let prev = v0;
+  for(const x of v){ r.push(x/prev - 1); prev = x; }
+  const mean = r.reduce((a,b)=>a+b, 0)/n;
+  const sd = n > 1 ? Math.sqrt(r.reduce((a,b)=>a + (b-mean)**2, 0)/(n-1)) : 0;
+  const dsd = Math.sqrt(r.reduce((a,b)=>a + Math.min(0,b)**2, 0)/n);
+  let pico = v0, mdd = 0; const dd = [];
+  for(const x of v){ pico = Math.max(pico, x); const d = x/pico - 1; dd.push(d); mdd = Math.min(mdd, d); }
+  const vf = v[n-1], ret = vf/v0 - 1, ann = Math.pow(vf/v0, 252/n) - 1, A = Math.sqrt(252);
+  return {vf, ret, ann, vol: sd*A, mdd, dd,
+    sharpe: sd > 0 ? mean/sd*A : null, sortino: dsd > 0 ? mean/dsd*A : null, calmar: mdd < 0 ? ann/-mdd : null,
+    pos: r.filter(x=>x>0).length/n};
+}
+// acierto: compra seguida de alza del activo al día siguiente, venta seguida de baja
+function metricasRun(r){
+  const R = r.rep, P = r.P, m = metricas(R.v, R.v0); if(!m) return null;
+  let ok = 0, tot = 0, expo = 0;
+  R.acts.forEach((a,k)=>{
+    expo += R.v[k] > 0 ? (R.v[k] - R.cash[k]) / R.v[k] : 0;
+    if(a[0] === 'MANTENER' || k+1 >= P.n) return;
+    const sube = P.P[k+1][a[1]] - P.P[k][a[1]];
+    tot++; if((a[0]==='COMPRAR' && sube > 0) || (a[0]==='VENDER' && sube < 0)) ok++;
+  });
+  const bh = metricas(r.bh, R.v0);
+  return {...m, acc: tot ? ok/tot : null, ops: R.ops, expo: expo/R.acts.length, pen: R.penT, exceso: m.ret - bh.ret,
+    busq: r.search ? (r.alg==='astar' ? r.search.exp : r.search.total) : null, ms: r.origen==='vivo' ? r.ms : null};
+}
 function compraMantiene(P){
   const p0 = P.P[0], c = P.s0[1];
   return P.P.map(p=> c * (p.reduce((a,x,i)=>a + x/p0[i], 0) / NA) + dot(P.s0[2], p));
@@ -577,6 +630,7 @@ function ticks(a, b, n){
 }
 function fmtAxis(v, unit){
   if(unit === 'n') return nf0.format(v);
+  if(unit === 'p') return nf0.format(v*100) + ' %';
   const a = Math.abs(v);
   return (v<0?'−':'') + '$' + (a>=1e6 ? nf2.format(a/1e6).replace(/,?0+$/,'')+'M' : a>=1e4 ? nf0.format(a/1e3)+'k' : nf0.format(a));
 }
@@ -642,7 +696,60 @@ function scrubbable(el){
 // ============================================================
 //  Render
 // ============================================================
-function pintarTodo(){ pintarCabecera(); pintarCorridas(); pintarBusqueda(); pintarDia(); }
+function pintarTodo(){ pintarCabecera(); pintarCorridas(); pintarBusqueda(); pintarDesempeno(); pintarDia(); }
+
+const pctu = r => nf2.format(r*100).replace(/,(\d)\d$/,',$1') + ' %';
+const dec2 = x => x == null ? '—' : nf2.format(x);
+// [etiqueta, definición, formato, clave, dirección (+1 mayor es mejor, -1 menor es mejor, 0 sin ganador)]
+const FILAS = [
+  ['Rentabilidad'],
+  ['Valor final', 'V(s_T): efectivo + acciones al precio del último día', money, 'vf', 1],
+  ['Retorno total', 'V(s_T) / V(s_0) − 1', pct, 'ret', 1],
+  ['Retorno anualizado', '(V(s_T) / V(s_0))^(252/T) − 1', pct, 'ann', 1],
+  ['Exceso vs. comprar y mantener', 'Retorno total menos el de repartir el efectivo en ⅓ por activo el día 0', pct, 'exceso', 1],
+  ['Riesgo'],
+  ['Volatilidad anual', 'Desviación estándar del retorno diario × √252', pctu, 'vol', -1],
+  ['Máx. caída', 'Peor caída del valor respecto a su máximo previo (drawdown)', pctu, 'mdd', 1],
+  ['Sharpe', 'Retorno diario medio / desviación × √252 (tasa libre de riesgo 0)', dec2, 'sharpe', 1],
+  ['Sortino', 'Como Sharpe, pero solo penaliza la volatilidad de los días con pérdida', dec2, 'sortino', 1],
+  ['Calmar', 'Retorno anualizado / máx. caída', dec2, 'calmar', 1],
+  ['Decisiones'],
+  ['Días con ganancia', 'Porcentaje de días en que el valor del portafolio subió', pctu, 'pos', 1],
+  ['Acierto de operaciones', 'Compras seguidas de alza y ventas seguidas de baja del activo al día siguiente', pctu, 'acc', 1],
+  ['Operaciones', 'Días con compra o venta (el resto es mantener)', x=>nf0.format(x), 'ops', 0],
+  ['Exposición media', 'Fracción promedio del valor invertida en acciones', pctu, 'expo', 0],
+  ['Penalización Σ', 'Suma de la penalización por concentración del costo', money, 'pen', -1],
+  ['Búsqueda'],
+  ['Nodos / simulaciones', 'A*: nodos expandidos. MCTS: simulaciones totales', x=>nf0.format(x), 'busq', 0],
+  ['Tiempo de cómputo', 'Tiempo en el navegador (solo corridas en vivo)', x=>(x/1000).toFixed(2).replace('.',',')+' s', 'ms', 0],
+];
+function pintarDesempeno(){
+  const sel = UI.sel;
+  const cols = UI.runs.filter(r=>r.rep.x.length).map(r=>({r, m:metricasRun(r)}));
+  const bhm = metricas(sel.bh, sel.rep.v0);
+  cols.push({bh:true, m:{...bhm, exceso:0, acc:null, ops:1, expo:1, pen:null, busq:null, ms:null}});
+  const head = cols.map(c=>c.bh ? `<th>Comprar y mantener</th>` : `<th class="${c.r===sel?'sel':''}"><i style="--c:${c.r.color}"></i>${c.r.name}${c.r.status==='corriendo'?' …':''}</th>`).join('');
+  let body = '';
+  for(const f of FILAS){
+    if(f.length === 1){ body += `<tr class="grp"><td colspan="${cols.length+1}">${f[0]}</td></tr>`; continue; }
+    const [lab, def, fmt, key, dir] = f;
+    const vals = cols.map(c=>c.m ? c.m[key] : null);
+    let best = null;
+    if(dir){ const ok = vals.map((v,i)=>[v,i]).filter(([v])=>v!=null && isFinite(v)); if(ok.length > 1) best = ok.reduce((a,b)=> (b[0]-a[0])*dir > 0 ? b : a)[1]; }
+    body += `<tr><td title="${def}">${lab}</td>` + vals.map((v,i)=>`<td class="${cols[i].r===sel?'sel ':''}${i===best?'best':''}">${v==null||!isFinite(v)?'—':fmt(v)}</td>`).join('') + '</tr>';
+  }
+  $('perf').innerHTML = `<table><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+
+  // caída desde el máximo
+  const lay = [], ys = [0];
+  const bhx = sel.P.P.map((_,i)=>sel.P.inicio+i);
+  lay.push({x:bhx, y:bhm.dd, c:'var(--faint)', w:1.25, dash:'4 3'}); ys.push(...bhm.dd);
+  for(const c of cols){ if(c.bh || !c.m || (c.r!==sel && !c.r.cmp)) continue;
+    lay.push({x:c.r.rep.x, y:c.m.dd, c:c.r.color, w:c.r===sel?2:1.25, op:c.r===sel?1:.55}); ys.push(...c.m.dd); }
+  lay.push({kind:'hline', y:0, c:'var(--faint)'});
+  chart($('ch-dd'), {h:200, x0:sel.P.inicio, x1:sel.P.inicio+sel.P.n-1, y:[Math.min(...ys), 0], unit:'p', layers:lay, label:'Caída desde el máximo'});
+  $('leg-dd').innerHTML = `<i style="--c:${sel.color}">${sel.name}</i>` + UI.runs.filter(o=>o!==sel && o.cmp).map(o=>`<i style="--c:${o.color}">${o.name}</i>`).join('') + `<i class="dash" style="--c:var(--faint)">comprar y mantener</i>`;
+}
 
 function pintarCabecera(){
   const r = UI.sel, R = r.rep, done = r.status === 'listo';
@@ -811,7 +918,7 @@ function tick(){
   J.step(t0 + 14, cap);
   r.ms += performance.now() - t0;
   sincronizar(J, r);
-  if(UI.sel === r){ pintarCabecera(); pintarBusqueda(); pintarDia(); }
+  if(UI.sel === r){ pintarCabecera(); pintarBusqueda(); pintarDesempeno(); pintarDia(); }
   if(J.done){ terminar('listo'); return; }
   requestAnimationFrame(tick);
 }
@@ -882,7 +989,7 @@ $('scrub').oninput = e=>{ pausar(); UI.k = +e.target.value; pintarDia(); };
 $('runs').onclick = e=>{
   const c = e.target.closest('[data-cmp]'), b = e.target.closest('.rrow'); if(!b) return;
   const r = UI.runs.find(o=>o.id === +b.dataset.id);
-  if(c && r !== UI.sel){ r.cmp = !r.cmp; pintarCorridas(); pintarDia(); return; }
+  if(c && r !== UI.sel){ r.cmp = !r.cmp; pintarCorridas(); pintarDesempeno(); pintarDia(); return; }
   if(r === UI.sel) return;
   if(UI.sel && UI.sel.status!=='corriendo') UI.sel.cmp = true;
   UI.sel = r; r.cmp = false; pausar(); UI.k = Math.max(0, r.rep.x.length-1); pintarTodo();
@@ -897,7 +1004,7 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='Escape') detener();
 });
 ['ch-valor','ch-precios','ch-comp','ch-cant'].forEach(id=>scrubbable($(id)));
-let rz; window.addEventListener('resize', ()=>{ cancelAnimationFrame(rz); rz = requestAnimationFrame(()=>{ pintarBusqueda(); pintarDia(); }); });
+let rz; window.addEventListener('resize', ()=>{ cancelAnimationFrame(rz); rz = requestAnimationFrame(()=>{ pintarBusqueda(); pintarDesempeno(); pintarDia(); }); });
 
 // ---- arranque: las dos corridas de results/
 $('dsmeta').textContent = `${fecha(0)} – ${fecha(DATA.fechas.length-1)} · ${DATA.fechas.length} días hábiles`;
